@@ -1,0 +1,20 @@
+{
+  "name": "Vani — books, read aloud",
+  "short_name": "Vani",
+  "description": "Open-source EPUB library and reader that reads any book aloud in the voice you choose, with linked notes.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f7f3ea",
+  "theme_color": "#f7f3ea",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ],
+  "file_handlers": [
+    { "action": "./", "accept": { "application/epub+zip": [".epub"] } }
+  ],
+  "categories": ["books", "education", "productivity"]
+}
