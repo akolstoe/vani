@@ -15,7 +15,7 @@ const sleep = (ms, signal) => new Promise((resolve) => {
 // Apply regex replacements while keeping a map from new-text index -> original index,
 // so word highlighting stays aligned after "Dr." -> "Doctor" style substitutions.
 export function transformText(text, opts) {
-  const rules = [];
+  const rules = [{ re: /\s{2,}/g, to: ' ' }];
   if (opts.skipBrackets) rules.push({ re: /\s?\[\d{1,3}\]|\s?\[[a-z]\]/g, to: '' });
   for (const r of opts.pronunciations || []) {
     if (!r.from) continue;
@@ -77,7 +77,7 @@ export class Narrator extends EventTarget {
 
   setOptions(opts) {
     const restart = this.state === 'playing' &&
-      ['engine', 'voice', 'dialogueVoice', 'rate', 'pitch', 'dialogueEnabled'].some((k) => opts[k] !== this.opts[k]);
+      ['engine', 'voice', 'dialogueVoice', 'rate', 'pitch', 'dialogueEnabled', 'expressiveness'].some((k) => opts[k] !== this.opts[k]);
     this.opts = { ...opts };
     if (restart) this.play(this.index);
   }

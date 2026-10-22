@@ -149,7 +149,7 @@ export async function notesView(root, { id, params }) {
         h('div', { class: 'chips' }, out.map(({ t, r }) => h('a', {
           class: `chip ${r.type}`,
           href: r.type === 'note' ? `#/notes/${r.id}` : r.type === 'book' ? `#/read/${r.id}` : `#/notes/new?title=${encodeURIComponent(r.title)}`,
-        }, r.type === 'book' ? icon('book', 14) : null, r.type === 'missing' ? `+ ${t}` : notes.find((n) => n.id === r.id)?.title || books.find((b) => b.id === r.id)?.title || t)))) : null,
+        }, r.type === 'book' ? icon('book', 14) : null, r.type === 'missing' ? `+ ${t}` : notes.find((n) => n.id === r.id)?.title || books.find((b) => b.id === r.id)?.title || t)))) : '',
       h('section', {}, h('h3', {}, icon('link', 16), `Linked from (${back.length})`),
         back.length ? h('div', { class: 'note-list' }, back.map((n) => h('a', { class: 'note-row', href: `#/notes/${n.id}` },
           h('span', { class: `dot ${n.kind === 'highlight' ? `hl-${n.color}` : 'plain'}` }),

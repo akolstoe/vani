@@ -86,27 +86,50 @@ export async function voicesView(root) {
         h('p', { class: 'hint' }, 'The server is a small open-source program you run on your own computer (or a GPU machine). It turns a 10–30 second recording into a voice Vani can read with. Setup takes about five minutes — see “server/README.md” in the project.'));
       return;
     }
-    const name = h('input', { type: 'text', placeholder: 'e.g. Grandpa, My voice, Narrator 2' });
-    const file = h('input', { type: 'file', accept: 'audio/*' });
+    let health = {};
+    try { health = await srv.health(); } catch {}
+    const name = h('input', { type: 'text', placeholder: 'e.g. My voice, Grandpa, Narrator 2' });
     const consent = h('input', { type: 'checkbox' });
-    const add = h('button', { class: 'btn' }, icon('upload', 16), 'Create voice');
+    let audio = null; // Blob from recorder or file
+    const recorder = voiceRecorder((blob) => { audio = blob; });
+    const file = h('input', { type: 'file', accept: 'audio/*', onchange: () => { audio = file.files[0] || null; recorder.reset(file.files[0]); } });
+    const add = h('button', { class: 'btn' }, icon('mic', 16), 'Create voice');
     add.onclick = async () => {
-      if (!name.value.trim() || !file.files[0]) return toast('Give the voice a name and choose a recording.');
+      if (!audio) return toast('Record yourself reading the passage, or choose a recording.');
+      if (!name.value.trim()) return toast('Give the voice a name.');
       if (!consent.checked) return toast('Please confirm you have permission to use this voice.');
       add.disabled = true;
+      add.replaceChildren(h('span', { class: 'spinner' }), 'Creating…');
       try {
-        await srv.addVoice(name.value.trim(), file.files[0]);
-        toast(`Voice “${name.value.trim()}” created.`);
+        const v = await srv.addVoice(name.value.trim(), audio);
+        toast(`Voice “${v.name}” created. Tap it to hear it.`, { duration: 6000 });
         drawServer();
-      } catch (e) { toast(`Upload failed: ${e.message}`); add.disabled = false; }
+      } catch (e) {
+        toast(`Couldn't create the voice: ${e.message}`, { duration: 7000 });
+        add.disabled = false;
+        add.replaceChildren(icon('mic', 16), 'Create voice');
+      }
     };
+    const list = h('div', { class: 'voice-grid' }, voices.map((v) => {
+      const b = h('button', { class: 'voice-tile grow', title: `Preview ${v.name}` }, icon('play', 14),
+        h('span', {}, h('strong', {}, v.name), h('span', { class: 'muted small' }, 'Your voice')));
+      b.onclick = () => preview('server', v.id, b);
+      const del = h('button', { class: 'icon-btn', 'aria-label': `Delete ${v.name}`, title: 'Delete voice', onclick: async () => {
+        const { confirmDialog } = await import('../ui.js');
+        if (!(await confirmDialog(`Delete the voice “${v.name}”? The recording is removed from your computer.`))) return;
+        try { await srv.deleteVoice(v.id); drawServer(); } catch (e) { toast(e.message); }
+      } }, icon('trash', 16));
+      return h('div', { class: 'row voice-row' }, b, del);
+    }));
     srvBody.replaceChildren(
-      h('p', { class: 'ok' }, `Connected · ${voices.length} voice${voices.length === 1 ? '' : 's'}`),
-      voices.length ? voiceGrid('server', voices) : null,
+      h('p', { class: 'ok' }, `Connected · ${voices.length} voice${voices.length === 1 ? '' : 's'}${health.device ? ` · running on ${health.device === 'cuda' ? 'your NVIDIA GPU' : health.device.toUpperCase()}` : ''}${health.model_loaded === false ? ' · model still loading' : ''}`),
+      voices.length ? list : '',
       h('div', { class: 'add-voice' },
-        h('h3', {}, 'Add a voice'),
-        h('p', { class: 'hint' }, 'Upload a clean recording of one person speaking, 10–30 seconds, no music or background noise.'),
-        field('Name', name), field('Recording', file),
+        h('h3', {}, 'Clone a voice'),
+        h('p', { class: 'hint' }, 'In a quiet room, read the passage below in your natural reading voice. 15–30 seconds is ideal.'),
+        recorder.el,
+        h('details', {}, h('summary', { class: 'hint' }, 'Or upload a recording instead'), file),
+        field('Name', name),
         h('label', { class: 'consent' }, consent, h('span', {}, 'This is my own voice, or I have the speaker’s permission to create and use it.')),
         add));
   };
@@ -131,4 +154,86 @@ export async function voicesView(root) {
 
   drawKokoro();
   drawServer();
+}
+
+const READING = `When the sunlight strikes raindrops in the air, they act as a prism and form a rainbow. ` +
+  `I remember the quiet of that old house: the clock ticking, the kettle starting to sing, and somebody laughing in the next room. ` +
+  `"Are you coming?" she asked. I wasn't sure. Still, I picked up my coat, checked my pockets twice, and stepped out into the cold, bright morning.`;
+
+function voiceRecorder(onAudio) {
+  let media = null, rec = null, chunks = [], started = 0, tick = null, raf = null, analyser = null;
+  const time = h('span', { class: 'rec-time' }, '0:00');
+  const meter = h('div', { class: 'rec-meter' }, h('span'));
+  const player = h('audio', { controls: true, hidden: true, class: 'rec-player' });
+  const btn = h('button', { class: 'rec-btn', 'aria-label': 'Start recording' }, icon('mic', 22));
+  const label = h('span', { class: 'muted small' }, 'Tap to record');
+  const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+
+  const stop = () => {
+    rec?.state === 'recording' && rec.stop();
+    media?.getTracks().forEach((t) => t.stop());
+    clearInterval(tick); cancelAnimationFrame(raf);
+    btn.classList.remove('on');
+    btn.replaceChildren(icon('mic', 22));
+    meter.firstChild.style.width = '0%';
+  };
+
+  btn.onclick = async () => {
+    if (rec?.state === 'recording') { stop(); return; }
+    try {
+      media = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: true, autoGainControl: true } });
+    } catch {
+      toast('Microphone access was blocked. Allow it in your browser’s site settings, or upload a recording instead.', { duration: 7000 });
+      return;
+    }
+    chunks = [];
+    rec = new MediaRecorder(media);
+    rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+    rec.onstop = () => {
+      const blob = new Blob(chunks, { type: rec.mimeType || 'audio/webm' });
+      const secs = (Date.now() - started) / 1000;
+      player.src = URL.createObjectURL(blob);
+      player.hidden = false;
+      label.textContent = secs < 10 ? `Only ${Math.round(secs)}s — try for 15–30s` : `Recorded ${fmt(secs)}. Listen back, or tap to re-record.`;
+      onAudio(blob);
+    };
+    const { audioContext } = await import('../tts/audio.js');
+    const ac = audioContext();
+    await ac.resume();
+    analyser = ac.createAnalyser();
+    analyser.fftSize = 512;
+    ac.createMediaStreamSource(media).connect(analyser);
+    const data = new Uint8Array(analyser.fftSize);
+    const draw = () => {
+      analyser.getByteTimeDomainData(data);
+      let peak = 0;
+      for (const v of data) peak = Math.max(peak, Math.abs(v - 128));
+      meter.firstChild.style.width = `${Math.min(100, (peak / 128) * 160)}%`;
+      raf = requestAnimationFrame(draw);
+    };
+    draw();
+    rec.start();
+    started = Date.now();
+    btn.classList.add('on');
+    btn.replaceChildren(h('span', { class: 'rec-stop' }));
+    label.textContent = 'Recording… tap to stop';
+    player.hidden = true;
+    tick = setInterval(() => {
+      const s = (Date.now() - started) / 1000;
+      time.textContent = fmt(s);
+      if (s >= 45) stop();
+    }, 250);
+  };
+
+  const el = h('div', { class: 'recorder' },
+    h('blockquote', { class: 'reading-passage' }, READING),
+    h('div', { class: 'row' }, btn, h('div', { class: 'grow stack tight' }, h('div', { class: 'row between' }, label, time), meter)),
+    player);
+  return {
+    el,
+    reset(fileBlob) {
+      stop();
+      if (fileBlob) { player.src = URL.createObjectURL(fileBlob); player.hidden = false; label.textContent = 'Using the uploaded recording.'; }
+    },
+  };
 }

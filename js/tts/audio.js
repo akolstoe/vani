@@ -71,3 +71,24 @@ export function floatToBuffer(samples, sampleRate) {
   buf.copyToChannel(samples, 0);
   return buf;
 }
+
+// Decode any audio the browser understands (webm/opus from the mic, mp3, m4a…) and
+// re-encode it as 16-bit mono WAV, which every voice model can read.
+export async function toWav(blob) {
+  const ac = audioContext();
+  const buf = await ac.decodeAudioData(await blob.arrayBuffer());
+  const n = buf.length;
+  const mono = new Float32Array(n);
+  for (let c = 0; c < buf.numberOfChannels; c++) {
+    const d = buf.getChannelData(c);
+    for (let i = 0; i < n; i++) mono[i] += d[i] / buf.numberOfChannels;
+  }
+  const out = new DataView(new ArrayBuffer(44 + n * 2));
+  const w = (o, s) => [...s].forEach((ch, i) => out.setUint8(o + i, ch.charCodeAt(0)));
+  w(0, 'RIFF'); out.setUint32(4, 36 + n * 2, true); w(8, 'WAVE'); w(12, 'fmt ');
+  out.setUint32(16, 16, true); out.setUint16(20, 1, true); out.setUint16(22, 1, true);
+  out.setUint32(24, buf.sampleRate, true); out.setUint32(28, buf.sampleRate * 2, true);
+  out.setUint16(32, 2, true); out.setUint16(34, 16, true); w(36, 'data'); out.setUint32(40, n * 2, true);
+  for (let i = 0; i < n; i++) out.setInt16(44 + i * 2, Math.max(-1, Math.min(1, mono[i])) * 0x7fff, true);
+  return { blob: new Blob([out], { type: 'audio/wav' }), seconds: buf.duration };
+}

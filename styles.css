@@ -469,3 +469,20 @@ input[type="range"] { width: 100%; accent-color: var(--accent); height: 28px; ma
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
 }
+
+/* ---------- Voice recorder ---------- */
+.recorder { display: flex; flex-direction: column; gap: 12px; }
+.reading-passage { margin: 0; padding: 14px 16px; border-radius: 10px; background: var(--surface); border: 1px solid var(--line); font-family: var(--read-font); font-size: 1.05rem; line-height: 1.6; }
+.rec-btn { width: 56px; height: 56px; border-radius: 50%; border: 0; display: grid; place-items: center; cursor: pointer; background: var(--accent); color: var(--accent-ink); flex-shrink: 0; transition: transform .12s; }
+.rec-btn:active { transform: scale(.94); }
+.rec-btn.on { background: var(--danger); animation: recpulse 1.4s ease-in-out infinite; }
+@keyframes recpulse { 50% { box-shadow: 0 0 0 10px color-mix(in srgb, var(--danger) 18%, transparent); } }
+.rec-stop { width: 18px; height: 18px; border-radius: 4px; background: #fff; }
+.rec-time { font-variant-numeric: tabular-nums; font-weight: 650; }
+.rec-meter { height: 6px; border-radius: 6px; background: var(--line); overflow: hidden; }
+.rec-meter span { display: block; height: 100%; width: 0; background: var(--ok); transition: width .06s; }
+.rec-player { width: 100%; }
+.stack.tight { gap: 6px; }
+.voice-row { gap: 4px; }
+.voice-row .voice-tile { flex: 1; }
+details summary { cursor: pointer; margin-bottom: 8px; }
