@@ -2,6 +2,43 @@
 // "now" jobs (the sentence being read) jump ahead of "later" ones.
 let LIB = 'https://cdn.jsdelivr.net/npm/@mintplex-labs/piper-tts-web@1/+esm';
 let ttsPromise = null;
+const PIPER_WASM = 'https://cdn.jsdelivr.net/npm/@diffusionstudio/piper-wasm@1.0.0/build/piper_phonemize';
+// The library's default ONNX Runtime location (cdnjs) is missing a file it needs, so try others.
+const ORT_BASES = [
+  'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/',
+  'https://unpkg.com/onnxruntime-web@1.18.0/dist/',
+  'https://cdnjs.cloudflare.com/ajax/libs/onnxruntime-web/1.18.0/',
+];
+let ortIndex = 0;
+let session = null;
+let sessionVoice = null;
+
+// The library keeps one shared session and silently ignores later voice changes,
+// so start a fresh session whenever the voice changes.
+async function getSession(voice) {
+  if (session && sessionVoice === voice) return session;
+  const tts = await load();
+  const S = tts.TtsSession;
+  if (!S?.create) throw new Error('Unexpected Piper library version');
+  let lastErr;
+  for (; ortIndex < ORT_BASES.length; ortIndex++) {
+    try {
+      S._instance = null;
+      session = await S.create({
+        voiceId: voice,
+        wasmPaths: { onnxWasm: ORT_BASES[ortIndex], piperWasm: `${PIPER_WASM}.wasm`, piperData: `${PIPER_WASM}.data` },
+      });
+      sessionVoice = voice;
+      return session;
+    } catch (e) {
+      lastErr = e;
+      session = null; sessionVoice = null;
+      if (!/backend|fetch|import|wasm/i.test(e?.message || '')) break; // not a loading problem
+    }
+  }
+  ortIndex = 0;
+  throw lastErr;
+}
 const queue = [];
 let busy = false;
 
@@ -16,9 +53,9 @@ async function pump() {
   while (queue.length) {
     const job = queue.shift();
     try {
-      const tts = await load();
+      const s = await getSession(job.voice);
       const t0 = performance.now();
-      const wav = await tts.predict({ text: job.text, voiceId: job.voice });
+      const wav = await s.predict(job.text);
       const buf = await wav.arrayBuffer();
       self.postMessage({ id: job.id, type: 'audio', wav: buf, ms: performance.now() - t0 }, [buf]);
     } catch (e) {
@@ -40,6 +77,7 @@ self.onmessage = async ({ data }) => {
           if (p?.total) self.postMessage({ type: 'progress', progress: p.loaded / p.total, file: p.url });
         });
       }
+      await getSession(data.voice);
       self.postMessage({ id, type: 'ready' });
     } catch (e) {
       self.postMessage({ id, type: 'error', message: e?.message || String(e) });
