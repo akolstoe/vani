@@ -81,10 +81,10 @@ export async function voicesView(root) {
   const ws = ENGINES.webspeech;
   let wsVoices = [];
   try { wsVoices = await ws.voices(); } catch {}
-  const langs = [...new Set(wsVoices.map((v) => v.lang.split('-')[0]))].sort();
+  const langs = [...new Set(wsVoices.map((v) => v.lang.split('-')[0].toLowerCase()).filter(Boolean))].sort();
   const myLang = (navigator.language || 'en').split('-')[0];
   const wsGrid = h('div');
-  const drawWs = (lang) => wsGrid.replaceChildren(voiceGrid('webspeech', wsVoices.filter((v) => !lang || v.lang.startsWith(lang))));
+  const drawWs = (lang) => wsGrid.replaceChildren(voiceGrid('webspeech', wsVoices.filter((v) => !lang || v.lang.toLowerCase().startsWith(lang))));
   drawWs(langs.includes(myLang) ? myLang : '');
 
   // ---- Voice server -----------------------------------------------------------------
@@ -163,11 +163,11 @@ export async function voicesView(root) {
       h('p', {}, ws.description),
       langs.length > 1 ? h('select', { onchange: (e) => drawWs(e.target.value) },
         h('option', { value: '' }, 'All languages'),
-        langs.map((l) => h('option', { value: l, selected: l === myLang }, new Intl.DisplayNames([navigator.language || 'en'], { type: 'language' }).of(l) || l))) : null,
+        langs.map((l) => h('option', { value: l, selected: l === myLang }, languageName(l)))) : null,
       wsGrid));
 
-  drawKokoro();
-  drawServer();
+  drawKokoro().catch((e) => kStatus.replaceChildren(h('p', { class: 'warn' }, `Couldn't load this section: ${e.message}`)));
+  drawServer().catch((e) => srvBody.replaceChildren(h('p', { class: 'warn' }, `Couldn't load this section: ${e.message}`)));
 }
 
 const READING = `When the sunlight strikes raindrops in the air, they act as a prism and form a rainbow. ` +
@@ -250,4 +250,8 @@ function voiceRecorder(onAudio) {
       if (fileBlob) { player.src = URL.createObjectURL(fileBlob); player.hidden = false; label.textContent = 'Using the uploaded recording.'; }
     },
   };
+}
+
+function languageName(code) {
+  try { return new Intl.DisplayNames([navigator.language || 'en'], { type: 'language' }).of(code) || code; } catch { return code; }
 }

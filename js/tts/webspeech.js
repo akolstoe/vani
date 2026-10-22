@@ -23,7 +23,7 @@ export const webspeech = {
   async voices() {
     const list = await loadVoices();
     return list
-      .map((v) => ({ id: v.voiceURI, name: v.name, lang: v.lang, group: v.localService ? 'On this device' : 'Online' }))
+      .map((v) => ({ id: v.voiceURI, name: v.name, lang: (v.lang || '').replace(/_/g, '-'), group: v.localService ? 'On this device' : 'Online' }))
       .sort((a, b) => a.lang.localeCompare(b.lang) || a.name.localeCompare(b.name));
   },
 

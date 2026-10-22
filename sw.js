@@ -1,6 +1,6 @@
 // Offline + speed: serve the app from cache instantly, refresh the cache in the background.
 // Books and notes live in IndexedDB, not here.
-const VERSION = 'vani-v7';
+const VERSION = 'vani-v8';
 const SHELL = [
   './', 'index.html', 'styles.css', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png',
   'js/app.js', 'js/ui.js', 'js/db.js', 'js/zip.js', 'js/epub.js', 'js/reader.js', 'js/notes.js',
