@@ -3,8 +3,9 @@
 import { webspeech } from './webspeech.js';
 import { kokoro } from './kokoro.js';
 import { server } from './server.js';
+import { piper } from './piper.js';
 
-export const ENGINES = { webspeech, kokoro, server };
+export const ENGINES = { webspeech, piper, kokoro, server };
 
 const sleep = (ms, signal) => new Promise((resolve) => {
   if (ms <= 0) return resolve();
@@ -117,7 +118,7 @@ export class Narrator extends EventTarget {
     if (this.engine.id !== 'webspeech' && !this.engine.loaded) {
       this._set('loading');
       try {
-        await this.engine.init((p, file) => this.dispatchEvent(new CustomEvent('loading', { detail: { progress: p, file } })));
+        await this.engine.init((p, file) => this.dispatchEvent(new CustomEvent('loading', { detail: { progress: p, file } })), this.opts.voice || undefined);
       } catch (e) {
         if (run !== this.run) return;
         this._set('idle');

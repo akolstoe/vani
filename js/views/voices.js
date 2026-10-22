@@ -23,7 +23,7 @@ export async function voicesView(root) {
     Object.values(ENGINES).forEach((e) => e.stop());
     btn?.classList.add('busy');
     try {
-      await ENGINES[engine].init?.();
+      await ENGINES[engine].init?.(null, voice || undefined);
       await ENGINES[engine].speak(SAMPLE, { ...settings.get(), voice, pitch: 0, rate: 1 }, {});
     } catch (e) { toast(`Preview failed: ${e.message}`); }
     btn?.classList.remove('busy');
@@ -40,20 +40,7 @@ export async function voicesView(root) {
   const kStatus = h('div', { class: 'stack' });
   const drawKokoro = async () => {
     if (kokoro.loaded) {
-      const result = h('p', { class: 'hint' });
-      const test = h('button', { class: 'btn ghost sm' }, icon('timer', 14), 'Test speed');
-      test.onclick = async () => {
-        test.disabled = true;
-        result.textContent = 'Testing…';
-        try {
-          const r = await kokoro.speedTest();
-          const verdict = r.factor <= 0.8 ? 'Fast enough for smooth listening.'
-            : r.factor <= 1.5 ? 'Usable, with short pauses between phrases.'
-            : 'Too slow for smooth listening on this device — Device voices or your voice server will work better.';
-          result.textContent = `Made ${r.audio.toFixed(1)}s of speech in ${r.seconds.toFixed(1)}s. ${verdict}`;
-        } catch (e) { result.textContent = `Test failed: ${e.message}`; }
-        test.disabled = false;
-      };
+      const [test, result] = speedTester(kokoro);
       kStatus.replaceChildren(h('p', { class: 'ok' }, `Ready · running on ${kokoro.device}`), h('div', { class: 'row wrap' }, test), result, voiceGrid('kokoro', await kokoro.voices()));
     } else {
       const bar = h('div', { class: 'load-bar show' }, h('span'));
@@ -75,6 +62,34 @@ export async function voicesView(root) {
         h('p', { class: 'hint' }, `28 voices across American and British English. ${navigator.gpu ? 'Your browser supports WebGPU, so generation will be fast.' : 'No WebGPU here, so it runs on the CPU — expect a short wait per sentence.'} The model downloads once and is cached.`),
         btn, voiceGrid('kokoro', await kokoro.voices()));
     }
+  };
+
+  // ---- Piper ----------------------------------------------------------------------
+  const piper = ENGINES.piper;
+  const pStatus = h('div', { class: 'stack' });
+  const drawPiper = async () => {
+    const voices = await piper.voices();
+    if (piper.loaded) {
+      const [test, result] = speedTester(piper);
+      pStatus.replaceChildren(h('p', { class: 'ok' }, 'Ready'), h('div', { class: 'row wrap' }, test), result, voiceGrid('piper', voices));
+      return;
+    }
+    const bar = h('div', { class: 'load-bar show' }, h('span'));
+    const btn = h('button', { class: 'btn' }, icon('download', 16), 'Download a voice (~60 MB)');
+    btn.onclick = async () => {
+      btn.disabled = true;
+      btn.replaceChildren(h('span', { class: 'spinner' }), 'Downloading…');
+      pStatus.append(bar);
+      try {
+        await piper.init((p) => { bar.firstChild.style.width = `${Math.round(p * 100)}%`; });
+        drawPiper();
+      } catch (e) {
+        toast(`Couldn't load Piper: ${e.message}`, { duration: 8000 });
+        btn.disabled = false;
+        btn.replaceChildren(icon('download', 16), 'Try again');
+      }
+    };
+    pStatus.replaceChildren(h('p', { class: 'hint' }, 'Each voice downloads the first time you use it, then works offline.'), btn, voiceGrid('piper', voices));
   };
 
   // ---- Device voices ---------------------------------------------------------------
@@ -155,6 +170,9 @@ export async function voicesView(root) {
 
   page.append(
     h('section', { class: 'card' },
+      h('header', { class: 'card-head' }, h('div', {}, h('h2', {}, 'Piper'), h('span', { class: 'badge' }, 'Fast · on-device · free')), useBtn('piper')),
+      h('p', {}, piper.description), pStatus),
+    h('section', { class: 'card' },
       h('header', { class: 'card-head' }, h('div', {}, h('h2', {}, 'Kokoro'), h('span', { class: 'badge' }, 'Neural · on-device · free')), useBtn('kokoro')),
       h('p', {}, kokoro.description), kStatus),
     h('section', { class: 'card' },
@@ -171,6 +189,7 @@ export async function voicesView(root) {
         langs.map((l) => h('option', { value: l, selected: l === myLang }, languageName(l)))) : null,
       wsGrid));
 
+  drawPiper().catch((e) => pStatus.replaceChildren(h('p', { class: 'warn' }, `Couldn't load this section: ${e.message}`)));
   drawKokoro().catch((e) => kStatus.replaceChildren(h('p', { class: 'warn' }, `Couldn't load this section: ${e.message}`)));
   drawServer().catch((e) => srvBody.replaceChildren(h('p', { class: 'warn' }, `Couldn't load this section: ${e.message}`)));
 }
@@ -259,4 +278,22 @@ function voiceRecorder(onAudio) {
 
 function languageName(code) {
   try { return new Intl.DisplayNames([navigator.language || 'en'], { type: 'language' }).of(code) || code; } catch { return code; }
+}
+
+function speedTester(engine) {
+  const result = h('p', { class: 'hint' });
+  const test = h('button', { class: 'btn ghost sm' }, icon('timer', 14), 'Test speed');
+  test.onclick = async () => {
+    test.disabled = true;
+    result.textContent = 'Testing…';
+    try {
+      const r = await engine.speedTest();
+      const verdict = r.factor <= 0.8 ? 'Fast enough for smooth listening.'
+        : r.factor <= 1.5 ? 'Usable, with short pauses between phrases.'
+        : 'Too slow for smooth listening on this device — try a faster engine or your voice server.';
+      result.textContent = `Made ${r.audio.toFixed(1)}s of speech in ${r.seconds.toFixed(1)}s. ${verdict}`;
+    } catch (e) { result.textContent = `Test failed: ${e.message}`; }
+    test.disabled = false;
+  };
+  return [test, result];
 }

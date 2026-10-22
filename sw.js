@@ -1,11 +1,11 @@
 // Offline + speed: serve the app from cache instantly, refresh the cache in the background.
 // Books and notes live in IndexedDB, not here.
-const VERSION = 'vani-v8';
+const VERSION = 'vani-v9';
 const SHELL = [
   './', 'index.html', 'styles.css', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png',
   'js/app.js', 'js/ui.js', 'js/db.js', 'js/zip.js', 'js/epub.js', 'js/reader.js', 'js/notes.js',
   'js/library.js', 'js/catalog.js', 'js/settings.js',
-  'js/tts/narrator.js', 'js/tts/webspeech.js', 'js/tts/kokoro.js', 'js/tts/kokoro-worker.js', 'js/tts/server.js', 'js/tts/audio.js',
+  'js/tts/narrator.js', 'js/tts/webspeech.js', 'js/tts/kokoro.js', 'js/tts/kokoro-worker.js', 'js/tts/piper.js', 'js/tts/piper-worker.js', 'js/tts/server.js', 'js/tts/audio.js',
   'js/views/library.js', 'js/views/reader.js', 'js/views/notes.js', 'js/views/discover.js',
   'js/views/voices.js', 'js/views/settings.js',
 ];

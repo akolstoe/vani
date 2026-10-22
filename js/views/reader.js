@@ -298,7 +298,7 @@ export async function readerView(root, { id, params }) {
         unlockAudio();
         narrator.pause();
         if (eng.id === 'kokoro' && !eng.loaded) toast('Loading the Kokoro voice model — the first time takes a minute…', { duration: 6000 });
-        eng.init?.().then(() => eng.speak(SAMPLE, { ...opts, voice }, {})).catch((e) => toast(`Preview failed: ${e.message}`));
+        eng.init?.(null, voice || undefined).then(() => eng.speak(SAMPLE, { ...opts, voice }, {})).catch((e) => toast(`Preview failed: ${e.message}`));
       };
 
       body.replaceChildren(
@@ -324,7 +324,7 @@ export async function readerView(root, { id, params }) {
 
         h('section', {}, h('h3', {}, 'Delivery'),
           slider({ label: 'Speed', min: 0.5, max: 3, step: 0.05, value: opts.rate, format: (v) => `${v.toFixed(2)}×`, onInput: (v) => set({ rate: v }) }),
-          slider({ label: 'Pitch', min: -6, max: 6, step: 0.5, value: opts.pitch, format: (v) => `${v > 0 ? '+' : ''}${v} st`, onInput: (v) => set({ pitch: v }) }),
+          eng.supportsPitch === false ? '' : slider({ label: 'Pitch', min: -6, max: 6, step: 0.5, value: opts.pitch, format: (v) => `${v > 0 ? '+' : ''}${v} st`, onInput: (v) => set({ pitch: v }) }),
           opts.engine === 'server' ? slider({ label: 'Expressiveness', min: 0.25, max: 1.5, step: 0.05, value: opts.expressiveness ?? 0.5, format: (v) => v < 0.4 ? 'Calm' : v < 0.7 ? 'Natural' : v < 1 ? 'Lively' : 'Dramatic', onInput: (v) => set({ expressiveness: v }) }) : null,
           slider({ label: 'Volume', min: 0.1, max: 1, step: 0.05, value: opts.volume, format: (v) => `${Math.round(v * 100)}%`, onInput: (v) => set({ volume: v }) })),
 
