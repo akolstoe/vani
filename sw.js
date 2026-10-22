@@ -1,6 +1,6 @@
-// Offline support: cache the app shell; network-first for the shell so updates arrive,
-// cache-first for fonts. Books and notes live in IndexedDB, not here.
-const VERSION = 'vani-v4';
+// Offline + speed: serve the app from cache instantly, refresh the cache in the background.
+// Books and notes live in IndexedDB, not here.
+const VERSION = 'vani-v5';
 const SHELL = [
   './', 'index.html', 'styles.css', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png',
   'js/app.js', 'js/ui.js', 'js/db.js', 'js/zip.js', 'js/epub.js', 'js/reader.js', 'js/notes.js',
@@ -11,7 +11,7 @@ const SHELL = [
 ];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL)));
+  e.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', (e) => {
@@ -20,18 +20,18 @@ self.addEventListener('activate', (e) => {
 });
 
 self.addEventListener('fetch', (e) => {
-  const url = new URL(e.request.url);
   if (e.request.method !== 'GET') return;
-  if (url.origin === location.origin) {
-    e.respondWith(fetch(e.request).then((res) => {
-      const copy = res.clone();
-      caches.open(VERSION).then((c) => c.put(e.request, copy));
+  const url = new URL(e.request.url);
+  const sameOrigin = url.origin === location.origin;
+  const cacheable = sameOrigin || /fonts\.(googleapis|gstatic)\.com|cdn\.jsdelivr\.net/.test(url.host);
+  if (!cacheable) return;
+  e.respondWith(caches.open(VERSION).then(async (cache) => {
+    const hit = await cache.match(e.request, { ignoreSearch: sameOrigin });
+    const refresh = fetch(e.request).then((res) => {
+      if (res.ok || res.type === 'opaque') cache.put(e.request, res.clone());
       return res;
-    }).catch(() => caches.match(e.request).then((r) => r || caches.match('index.html'))));
-  } else if (/fonts\.(googleapis|gstatic)\.com|cdn\.jsdelivr\.net/.test(url.host)) {
-    e.respondWith(caches.match(e.request).then((r) => r || fetch(e.request).then((res) => {
-      if (res.ok || res.type === 'opaque') { const copy = res.clone(); caches.open(VERSION).then((c) => c.put(e.request, copy)); }
-      return res;
-    })));
-  }
+    }).catch(() => null);
+    if (hit) { e.waitUntil(refresh); return hit; }
+    return (await refresh) || (sameOrigin ? cache.match('index.html') : Response.error());
+  }));
 });

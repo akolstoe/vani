@@ -23,9 +23,12 @@ const VOICES = [
   ['bm_lewis', 'Lewis', 'British English · M'], ['bm_daniel', 'Daniel', 'British English · M'],
 ];
 
+export const isPhone = () => navigator.userAgentData?.mobile ?? /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+
 let ttsPromise = null;
 const player = new AudioPlayer();
 const cache = new Map();
+let queue = Promise.resolve();
 
 export const kokoro = {
   id: 'kokoro',
@@ -39,7 +42,8 @@ export const kokoro = {
     if (!ttsPromise) {
       ttsPromise = (async () => {
         const { KokoroTTS } = await import(/* @vite-ignore */ LIB);
-        const webgpu = !!navigator.gpu && !!(await navigator.gpu.requestAdapter().catch(() => null));
+        // Phones crash on the full-precision GPU model (~330 MB), so they get the compact one (~90 MB).
+        const webgpu = !isPhone() && !!navigator.gpu && !!(await navigator.gpu.requestAdapter().catch(() => null));
         const tts = await KokoroTTS.from_pretrained(MODEL, {
           dtype: webgpu ? 'fp32' : 'q8',
           device: webgpu ? 'webgpu' : 'wasm',
@@ -63,7 +67,8 @@ export const kokoro = {
     const factor = pitchFactor(opts.pitch);
     const key = `${opts.voice}|${opts.rate}|${opts.pitch}|${text}`;
     if (!cache.has(key)) {
-      const p = this.init().then(async (tts) => {
+      // One generation at a time: running several in parallel doubles memory use.
+      const p = queue = queue.catch(() => {}).then(() => this.init()).then(async (tts) => {
         const out = await tts.generate(text, {
           voice: opts.voice || 'af_heart',
           speed: Math.max(0.5, Math.min(2, (opts.rate || 1) / factor)),
@@ -72,7 +77,7 @@ export const kokoro = {
       });
       p.catch(() => cache.delete(key));
       cache.set(key, p);
-      if (cache.size > 12) cache.delete(cache.keys().next().value);
+      if (cache.size > (isPhone() ? 4 : 12)) cache.delete(cache.keys().next().value);
     }
     return cache.get(key);
   },

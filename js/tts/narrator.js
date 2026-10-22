@@ -150,7 +150,7 @@ export class Narrator extends EventTarget {
       this.reader.markSentence(this.index, this.opts);
       this._set('playing');
       this.prefetch(this.index + 1);
-      if (this.engine.id !== 'webspeech') this.prefetch(this.index + 2);
+      if (this.engine.id === 'server') this.prefetch(this.index + 2);
 
       try {
         for (const seg of this.segmentsFor(s)) {
