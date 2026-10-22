@@ -43,9 +43,17 @@ export const webspeech = {
       const finish = (ok) => { if (!settled) { settled = true; this._current = null; resolve(ok); } };
       u.onend = () => finish(true);
       u.onerror = (e) => finish(e.error === 'interrupted' || e.error === 'canceled' ? false : true);
-      this._current = { finish };
-      speechSynthesis.cancel();
+      this._current = { finish, u };
+      // iOS Safari drops an utterance queued right after cancel(), so only cancel when needed.
+      if (speechSynthesis.speaking || speechSynthesis.pending) speechSynthesis.cancel();
       speechSynthesis.speak(u);
+      if (speechSynthesis.paused) speechSynthesis.resume();
+      // Some mobile browsers never fire onend; fall back to an estimate so reading doesn't stall.
+      const est = 1500 + (text.length * 90) / (u.rate || 1);
+      const watchdog = setInterval(() => {
+        if (settled) return clearInterval(watchdog);
+        if (!speechSynthesis.speaking && !speechSynthesis.pending) { clearInterval(watchdog); finish(true); }
+      }, Math.max(1500, est / 3));
     });
   },
 

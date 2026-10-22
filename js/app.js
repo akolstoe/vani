@@ -38,6 +38,7 @@ async function route() {
   const params = new URLSearchParams(query);
   const match = ROUTES.map((r) => ({ r, m: path.match(r.re) })).find((x) => x.m) || { r: ROUTES[0], m: [] };
   try { await cleanup?.(); } catch {}
+  document.querySelectorAll('.sheet-wrap').forEach((w) => w.remove());
   cleanup = null;
   nav.querySelectorAll('.nav-item').forEach((a) => a.classList.toggle('active', a.dataset.nav === match.r.nav));
   try {
@@ -71,6 +72,10 @@ function applyAppearance(s) {
   const dark = s.theme === 'night' || (s.theme === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#16140f' : s.theme === 'sepia' ? '#f1e6d0' : '#f7f3ea');
 }
+
+// Show unexpected errors on screen so problems on phones can be reported.
+window.addEventListener('error', (e) => toast(`Something went wrong: ${e.message}`, { duration: 8000 }));
+window.addEventListener('unhandledrejection', (e) => toast(`Something went wrong: ${e.reason?.message || e.reason}`, { duration: 8000 }));
 
 async function start() {
   await settings.load();

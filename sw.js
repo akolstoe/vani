@@ -1,6 +1,6 @@
 // Offline support: cache the app shell; network-first for the shell so updates arrive,
 // cache-first for fonts. Books and notes live in IndexedDB, not here.
-const VERSION = 'vani-v3';
+const VERSION = 'vani-v4';
 const SHELL = [
   './', 'index.html', 'styles.css', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png',
   'js/app.js', 'js/ui.js', 'js/db.js', 'js/zip.js', 'js/epub.js', 'js/reader.js', 'js/notes.js',
