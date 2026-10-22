@@ -28,22 +28,46 @@ export async function searchCatalog({ search = '', topic = '', language = '', pa
   };
 }
 
-// Gutenberg doesn't always send CORS headers, so try direct first, then the
-// optional proxy (the bundled voice server provides one at /fetch?url=).
-export async function downloadEpub(book) {
+// Public CORS relays for public-domain files. Gutenberg doesn't send CORS headers,
+// so a browser page can't download from it directly. These relays only ever see
+// the public book URL — never anything personal.
+const PUBLIC_RELAYS = [
+  'https://api.codetabs.com/v1/proxy/?quest={url}',
+  'https://api.allorigins.win/raw?url={url}',
+  'https://corsproxy.io/?url={url}',
+];
+
+async function fetchZip(url, ms = 30000) {
+  const ac = new AbortController();
+  const t = setTimeout(() => ac.abort(), ms);
+  try {
+    const r = await fetch(url, { signal: ac.signal });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const blob = await r.blob();
+    const head = new Uint8Array(await blob.slice(0, 2).arrayBuffer());
+    if (blob.size < 1000 || head[0] !== 0x50 || head[1] !== 0x4b) throw new Error('Not an EPUB');
+    return blob;
+  } finally { clearTimeout(t); }
+}
+
+// Try direct first, then your own helper (Settings), then public relays.
+export async function downloadEpub(book, onStatus) {
   const urls = [
+    `https://www.gutenberg.org/cache/epub/${book.gid}/pg${book.gid}-images-3.epub`,
     `https://www.gutenberg.org/ebooks/${book.gid}.epub3.images`,
     book.epub,
-  ].filter(Boolean);
-  const proxy = settings.get().corsProxy;
-  const attempts = [...urls, ...(proxy ? urls.map((u) => proxy.replace('{url}', encodeURIComponent(u))) : [])];
+  ].filter((u, i, a) => u && a.indexOf(u) === i);
+  const own = settings.get().corsProxy;
+  const relays = [...(own ? [own] : []), ...PUBLIC_RELAYS];
+  const attempts = [
+    ...urls.slice(0, 1),
+    ...relays.flatMap((p) => urls.slice(0, 2).map((u) => p.replace('{url}', encodeURIComponent(u)))),
+  ];
   let lastErr;
-  for (const url of attempts) {
+  for (const [i, url] of attempts.entries()) {
     try {
-      const r = await fetch(url);
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const blob = await r.blob();
-      if (blob.size < 1000) throw new Error('Empty download');
+      if (i > 0) onStatus?.(`Trying route ${i + 1}…`);
+      const blob = await fetchZip(url);
       return new File([blob], `${book.title}.epub`, { type: 'application/epub+zip' });
     } catch (e) { lastErr = e; }
   }

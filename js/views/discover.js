@@ -58,7 +58,7 @@ function card(b) {
     btn.disabled = true;
     btn.replaceChildren(h('span', { class: 'spinner' }), 'Adding…');
     try {
-      const file = await downloadEpub(b);
+      const file = await downloadEpub(b, (msg) => btn.replaceChildren(h('span', { class: 'spinner' }), msg));
       const { book, duplicate } = await importBook(file, 'gutenberg');
       btn.replaceChildren(icon('book', 14), 'Open');
       btn.disabled = false;
@@ -68,8 +68,10 @@ function card(b) {
       btn.disabled = false;
       btn.replaceChildren(icon('plus', 14), 'Add');
       if (e.blocked) {
-        toast('Gutenberg blocked a direct download. Opening the book page — download the EPUB, then import it. (Or set up the download helper in Settings.)', { duration: 9000 });
-        window.open(`https://www.gutenberg.org/ebooks/${b.gid}`, '_blank', 'noopener');
+        toast('Couldn’t reach Gutenberg right now. Try again in a moment.', {
+          duration: 9000, action: 'Open on Gutenberg',
+          onAction: () => window.open(`https://www.gutenberg.org/ebooks/${b.gid}`, '_blank', 'noopener'),
+        });
       } else toast(`Couldn't add this book: ${e.message}`);
     }
   };
