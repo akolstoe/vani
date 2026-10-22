@@ -70,7 +70,9 @@ function applyAppearance(s) {
   r.style.setProperty('--read-align', s.justify ? 'justify' : 'start');
   r.style.setProperty('--read-letter', s.fontFamily === 'dyslexic' ? '0.02em' : '0');
   const dark = s.theme === 'night' || (s.theme === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
-  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#16140f' : s.theme === 'sepia' ? '#f1e6d0' : '#f7f3ea');
+  const color = dark ? '#16140f' : s.theme === 'sepia' ? '#f1e6d0' : '#f7f3ea';
+  document.querySelectorAll('meta[name="theme-color"]').forEach((m) => { m.removeAttribute('media'); m.setAttribute('content', color); });
+  document.documentElement.style.background = 'var(--bg)';
 }
 
 // Show unexpected errors on screen so problems on phones can be reported.

@@ -102,7 +102,12 @@ export async function readerView(root, { id, params }) {
       : `Voice error: ${detail.message}`;
     toast(msg, { action: 'Voice settings', onAction: () => openPerformance(), duration: 7000 });
   });
-  narrator.addEventListener('slept', () => toast('Sleep timer: playback stopped. Good night.'));
+  narrator.addEventListener('waiting', ({ detail }) => {
+    player.classList.toggle('is-waiting', detail.waiting);
+    if (detail.waiting) status.textContent = 'Preparing voice…';
+    else updateStatus();
+  });
+    narrator.addEventListener('slept', () => toast('Sleep timer: playback stopped. Good night.'));
 
   function updateStatus() {
     const n = reader.sentences.length;

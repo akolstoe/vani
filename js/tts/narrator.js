@@ -159,6 +159,7 @@ export class Narrator extends EventTarget {
           await this.engine.speak(seg.spoken, seg.opts, {
             onWord: (ci) => this.opts.highlight === 'word' && this.reader.markWord(this.index, toOriginal(ci)),
             onProgress: (f) => this.opts.highlight === 'word' && this.reader.markWord(this.index, toOriginal(Math.floor(f * seg.spoken.length))),
+            onWaiting: (w) => this.dispatchEvent(new CustomEvent('waiting', { detail: { waiting: w } })),
           });
         }
       } catch (e) {

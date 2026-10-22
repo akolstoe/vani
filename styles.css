@@ -486,3 +486,5 @@ input[type="range"] { width: 100%; accent-color: var(--accent); height: 28px; ma
 .voice-row { gap: 4px; }
 .voice-row .voice-tile { flex: 1; }
 details summary { cursor: pointer; margin-bottom: 8px; }
+
+.player.is-waiting .play-btn { animation: pulse 1.2s ease-in-out infinite; }
