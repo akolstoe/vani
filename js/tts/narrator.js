@@ -149,8 +149,13 @@ export class Narrator extends EventTarget {
       const s = sentences[this.index];
       this.reader.markSentence(this.index, this.opts);
       this._set('playing');
-      this.prefetch(this.index + 1);
-      if (this.engine.id === 'server') this.prefetch(this.index + 2);
+      // Prefetch after the current sentence has been requested, so it never waits behind them.
+      const ahead = this.index;
+      setTimeout(() => {
+        if (run !== this.run) return;
+        this.prefetch(ahead + 1);
+        if (this.engine.id === 'server') this.prefetch(ahead + 2);
+      }, 0);
 
       try {
         for (const seg of this.segmentsFor(s)) {
@@ -159,7 +164,7 @@ export class Narrator extends EventTarget {
           await this.engine.speak(seg.spoken, seg.opts, {
             onWord: (ci) => this.opts.highlight === 'word' && this.reader.markWord(this.index, toOriginal(ci)),
             onProgress: (f) => this.opts.highlight === 'word' && this.reader.markWord(this.index, toOriginal(Math.floor(f * seg.spoken.length))),
-            onWaiting: (w) => this.dispatchEvent(new CustomEvent('waiting', { detail: { waiting: w } })),
+            onWaiting: (w, since) => this.dispatchEvent(new CustomEvent('waiting', { detail: { waiting: w, since } })),
           });
         }
       } catch (e) {

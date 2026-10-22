@@ -40,7 +40,21 @@ export async function voicesView(root) {
   const kStatus = h('div', { class: 'stack' });
   const drawKokoro = async () => {
     if (kokoro.loaded) {
-      kStatus.replaceChildren(h('p', { class: 'ok' }, `Ready · running on ${kokoro.device}`), voiceGrid('kokoro', await kokoro.voices()));
+      const result = h('p', { class: 'hint' });
+      const test = h('button', { class: 'btn ghost sm' }, icon('timer', 14), 'Test speed');
+      test.onclick = async () => {
+        test.disabled = true;
+        result.textContent = 'Testing…';
+        try {
+          const r = await kokoro.speedTest();
+          const verdict = r.factor <= 0.8 ? 'Fast enough for smooth listening.'
+            : r.factor <= 1.5 ? 'Usable, with short pauses between phrases.'
+            : 'Too slow for smooth listening on this device — Device voices or your voice server will work better.';
+          result.textContent = `Made ${r.audio.toFixed(1)}s of speech in ${r.seconds.toFixed(1)}s. ${verdict}`;
+        } catch (e) { result.textContent = `Test failed: ${e.message}`; }
+        test.disabled = false;
+      };
+      kStatus.replaceChildren(h('p', { class: 'ok' }, `Ready · running on ${kokoro.device}`), h('div', { class: 'row wrap' }, test), result, voiceGrid('kokoro', await kokoro.voices()));
     } else {
       const bar = h('div', { class: 'load-bar show' }, h('span'));
       const btn = h('button', { class: 'btn' }, icon('download', 16), 'Download voice model');

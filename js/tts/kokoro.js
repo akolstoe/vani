@@ -75,11 +75,14 @@ function getWorker() {
 
 function call(msg) {
   const id = nextId++;
-  return new Promise((resolve, reject) => {
+  const promise = new Promise((resolve, reject) => {
     pending.set(id, { resolve, reject });
     getWorker().postMessage({ ...msg, id });
   });
+  return { id, promise };
 }
+
+const GEN_TIMEOUT = 120000;
 
 export const kokoro = {
   id: 'kokoro',
@@ -93,7 +96,7 @@ export const kokoro = {
   init(onProgress) {
     if (onProgress) progressCb = onProgress;
     if (!readyPromise) {
-      readyPromise = call({ type: 'init', allowGpu: !isPhone() }).then((r) => {
+      readyPromise = call({ type: 'init', allowGpu: !isPhone(), lib: globalThis.__vaniKokoroLib }).promise.then((r) => {
         this.loaded = true;
         this.device = r.device;
         return r;
@@ -106,19 +109,33 @@ export const kokoro = {
     return VOICES.map(([id, name, group]) => ({ id, name, lang: id.startsWith('b') ? 'en-GB' : 'en-US', group }));
   },
 
-  _chunk(text, opts) {
+  stats: { ms: 0, audio: 0 }, // last generation time vs. audio length
+
+  _chunk(text, opts, priority = 'later') {
     const factor = pitchFactor(opts.pitch);
     const speed = Math.max(0.5, Math.min(2, (opts.rate || 1) / factor));
     const key = `${opts.voice}|${speed}|${text}`;
-    if (!cache.has(key)) {
-      const p = this.init()
-        .then(() => call({ type: 'generate', text, voice: opts.voice || 'af_heart', speed }))
-        .then((r) => floatToBuffer(r.audio, r.sampleRate));
-      p.catch(() => cache.delete(key));
-      cache.set(key, p);
-      if (cache.size > (isPhone() ? 6 : 16)) cache.delete(cache.keys().next().value);
+    const hit = cache.get(key);
+    if (hit) {
+      if (priority === 'now' && hit.jobId && !hit.settled) worker?.postMessage({ type: 'bump', job: hit.jobId });
+      return hit.promise;
     }
-    return cache.get(key);
+    const entry = { jobId: null, settled: false, promise: null };
+    entry.promise = this.init().then(() => {
+      const { id, promise } = call({ type: 'generate', text, voice: opts.voice || 'af_heart', speed, priority });
+      entry.jobId = id;
+      let timer;
+      const timeout = new Promise((_, rej) => { timer = setTimeout(() => rej(new Error('Kokoro is taking too long on this device. Try Device voices, or your voice server.')), GEN_TIMEOUT); });
+      return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+    }).then((r) => {
+      entry.settled = true;
+      this.stats = { ms: r.ms, audio: r.audio.length / r.sampleRate };
+      return floatToBuffer(r.audio, r.sampleRate);
+    });
+    entry.promise.catch(() => { entry.settled = true; cache.delete(key); });
+    cache.set(key, entry);
+    if (cache.size > (isPhone() ? 6 : 16)) cache.delete(cache.keys().next().value);
+    return entry.promise;
   },
 
   // Start generating the first piece(s) of a sentence ahead of time.
@@ -132,10 +149,10 @@ export const kokoro = {
     this._stopFlag = () => { stopped = true; };
     for (let i = 0; i < chunks.length; i++) {
       const c = chunks[i];
-      const job = this._chunk(c.text, opts);
+      const job = this._chunk(c.text, opts, 'now');
       let done = false;
       job.finally(() => { done = true; }).catch(() => {});
-      const t = setTimeout(() => { if (!done && !stopped) onWaiting?.(true); }, 400);
+      const t = setTimeout(() => { if (!done && !stopped) onWaiting?.(true, Date.now() - 400); }, 400);
       const buffer = await job.finally(() => { clearTimeout(t); onWaiting?.(false); });
       if (stopped) return false;
       if (chunks[i + 1]) this._chunk(chunks[i + 1].text, opts).catch(() => {});
@@ -149,7 +166,22 @@ export const kokoro = {
     return true;
   },
 
-  stop() { this._stopFlag?.(); player.stop(); },
+  stop() {
+    this._stopFlag?.();
+    player.stop();
+    worker?.postMessage({ type: 'drop-later' });
+  },
+
+  // Quick benchmark: how long this device takes to make a few seconds of speech.
+  async speedTest(voice = 'af_heart') {
+    await this.init();
+    const text = 'This is a short test of how quickly your device can read aloud.';
+    cache.forEach((_, k) => k.endsWith(text) && cache.delete(k));
+    const t0 = performance.now();
+    await this._chunk(text, { voice, rate: 1, pitch: 0 }, 'now');
+    const ms = performance.now() - t0;
+    return { seconds: ms / 1000, audio: this.stats.audio, factor: (ms / 1000) / (this.stats.audio || 1) };
+  },
   pause() { player.pause(); },
   resume() { player.resume(); },
 };

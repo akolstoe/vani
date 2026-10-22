@@ -102,10 +102,15 @@ export async function readerView(root, { id, params }) {
       : `Voice error: ${detail.message}`;
     toast(msg, { action: 'Voice settings', onAction: () => openPerformance(), duration: 7000 });
   });
+  let waitTimer;
   narrator.addEventListener('waiting', ({ detail }) => {
     player.classList.toggle('is-waiting', detail.waiting);
-    if (detail.waiting) status.textContent = 'Preparing voice…';
-    else updateStatus();
+    clearInterval(waitTimer);
+    if (detail.waiting) {
+      const tick = () => { status.textContent = `Preparing voice… ${Math.round((Date.now() - detail.since) / 1000)}s`; };
+      tick();
+      waitTimer = setInterval(tick, 1000);
+    } else updateStatus();
   });
     narrator.addEventListener('slept', () => toast('Sleep timer: playback stopped. Good night.'));
 
