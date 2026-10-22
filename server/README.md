@@ -1,7 +1,11 @@
 # Vani voice server
 
-Clone a voice from a short recording and have Vani read any book in it. Runs on your own
-computer using [Chatterbox](https://github.com/resemble-ai/chatterbox) (MIT license). Nothing is uploaded anywhere.
+Lets your computer do the heavy lifting for Vani, on any of your devices:
+
+- **Kokoro on your GPU**: 27 natural voices ([Kokoro-82M](https://github.com/hexgrad/kokoro), Apache-2.0), many times faster than real time.
+- **Your own voice**: clone a voice from a short recording with [Chatterbox](https://github.com/resemble-ai/chatterbox) (MIT).
+
+Everything runs on your computer. Nothing is uploaded anywhere.
 
 **Only clone your own voice, or a voice whose owner has given you permission.**
 
@@ -12,7 +16,7 @@ computer using [Chatterbox](https://github.com/resemble-ai/chatterbox) (MIT lice
 3. Double-click `start.bat`. Leave the window open while listening.
 4. In Vani → **Voices** → **Your voices**, the server address is `http://localhost:8765`. Tap **Connect**, then **Record my voice**.
 
-The first start downloads the Chatterbox model (~2 GB).
+The first start downloads the voice models (Kokoro ~330 MB, Chatterbox ~2 GB).
 
 ## Mac / Linux
 
@@ -23,10 +27,17 @@ pip install -r requirements.txt
 python vani_voice_server.py
 ```
 
-## Listening on your phone
+## Listening on your phone (at home or away)
 
-Your phone can't reach `localhost` on your computer. Install [Tailscale](https://tailscale.com) on both, then run
-`tailscale serve 8765` on the computer and use the `https://…ts.net` address it prints as the server address in Vani.
+Your phone can't reach `localhost` on your computer, and the Vani app needs a secure (https) address.
+[Tailscale](https://tailscale.com) (free) gives you one privately — only your own devices can use it:
+
+1. Install Tailscale on your computer and your phone, and sign in to the same account on both.
+2. On the computer, open PowerShell and run: `tailscale serve --bg 8765`
+3. It prints an address like `https://alex-omen.tail1234.ts.net`. In Vani on your phone → **Voices** →
+   **Your voices**, paste that address and tap **Connect**.
+
+Your computer needs to be on with `start.bat` running.
 
 ## Options
 

@@ -1,9 +1,10 @@
 """
-Vani voice server — custom and cloned voices for the Vani reader.
+Vani voice server — fast neural voices and cloned voices for the Vani reader.
 
-Runs on your own computer. Uses Chatterbox (Resemble AI, MIT license), an open-source
-zero-shot voice-cloning TTS model: give it 10–30 seconds of someone speaking and it
-can read anything in that voice.
+Runs on your own computer (an NVIDIA GPU makes it fast) and streams speech to the Vani
+app on any device:
+  * Kokoro-82M (Apache-2.0): 28 natural voices, many times faster than real time on a GPU.
+  * Chatterbox (Resemble AI, MIT): zero-shot voice cloning from a 10–30 second recording.
 
 Only clone your own voice, or a voice whose owner has given you permission.
 
@@ -90,6 +91,52 @@ def model():
 
 
 # ---------------------------------------------------------------------------
+# Kokoro (fast built-in voices)
+# ---------------------------------------------------------------------------
+KOKORO_VOICES = [
+    ("af_heart", "Heart", "a"), ("af_bella", "Bella", "a"), ("af_nicole", "Nicole", "a"), ("af_aoede", "Aoede", "a"),
+    ("af_kore", "Kore", "a"), ("af_sarah", "Sarah", "a"), ("af_nova", "Nova", "a"), ("af_sky", "Sky", "a"),
+    ("af_alloy", "Alloy", "a"), ("af_jessica", "Jessica", "a"), ("af_river", "River", "a"),
+    ("am_michael", "Michael", "a"), ("am_fenrir", "Fenrir", "a"), ("am_puck", "Puck", "a"), ("am_echo", "Echo", "a"),
+    ("am_eric", "Eric", "a"), ("am_liam", "Liam", "a"), ("am_onyx", "Onyx", "a"), ("am_adam", "Adam", "a"),
+    ("bf_emma", "Emma", "b"), ("bf_isabella", "Isabella", "b"), ("bf_alice", "Alice", "b"), ("bf_lily", "Lily", "b"),
+    ("bm_george", "George", "b"), ("bm_fable", "Fable", "b"), ("bm_lewis", "Lewis", "b"), ("bm_daniel", "Daniel", "b"),
+]
+KOKORO_IDS = {f"kokoro-{v}": (v, name, lang) for v, name, lang in KOKORO_VOICES}
+_kokoro = {}
+_kokoro_lock = threading.Lock()
+
+
+def kokoro_pipeline(lang: str):
+    with _kokoro_lock:
+        if lang not in _kokoro:
+            from kokoro import KPipeline
+            t = time.time()
+            shared = next(iter(_kokoro.values())).model if _kokoro else True
+            try:
+                _kokoro[lang] = KPipeline(lang_code=lang, model=shared, device=device() if device() != "mps" else "cpu")
+            except TypeError:  # older kokoro without device/model arguments
+                _kokoro[lang] = KPipeline(lang_code=lang)
+            print(f"Kokoro ({'American' if lang == 'a' else 'British'} English) ready in {time.time() - t:.1f}s", flush=True)
+    return _kokoro[lang]
+
+
+def kokoro_tts(voice_id: str, text: str, speed: float):
+    voice, _, lang = KOKORO_IDS[voice_id]
+    pipe = kokoro_pipeline(lang)
+    parts = []
+    with _gen_lock:
+        for _, _, audio in pipe(text, voice=voice, speed=speed, split_pattern=r"\n+"):
+            if audio is None:
+                continue
+            a = audio.detach().cpu().numpy() if hasattr(audio, "detach") else np.asarray(audio)
+            parts.append(a.astype("float32"))
+    if not parts:
+        raise HTTPException(500, "Kokoro produced no audio")
+    return np.concatenate(parts), 24000
+
+
+# ---------------------------------------------------------------------------
 # Voices: voices/<id>/reference.wav + meta.json
 # ---------------------------------------------------------------------------
 def list_voices():
@@ -105,6 +152,8 @@ def list_voices():
 def voice_path(voice_id: str) -> Path:
     if not voice_id or not re.fullmatch(r"[a-zA-Z0-9_-]+", voice_id):
         raise HTTPException(404, "Unknown voice")
+    if voice_id in KOKORO_IDS:
+        raise HTTPException(400, "Built-in voice")
     p = VOICES / voice_id / "reference.wav"
     if not p.exists():
         raise HTTPException(404, "Unknown voice")
@@ -117,12 +166,15 @@ def health():
         dev = device()
     except Exception as e:  # torch missing or broken
         dev = f"unavailable ({e})"
-    return {"ok": True, "device": dev, "model_loaded": _model is not None, "voices": len(list_voices())}
+    return {"ok": True, "device": dev, "model_loaded": _model is not None, "kokoro_loaded": bool(_kokoro),
+            "voices": len(list_voices())}
 
 
 @app.get("/voices")
 def get_voices():
-    return list_voices()
+    kokoro = [{"id": vid, "name": name, "lang": "en-GB" if lang == "b" else "en-US", "group": "Kokoro · on your computer"}
+              for vid, (_, name, lang) in KOKORO_IDS.items()]
+    return list_voices() + kokoro
 
 
 @app.post("/voices")
@@ -177,26 +229,29 @@ def tts(req: TTSRequest):
         raise HTTPException(400, "Empty text")
     if len(text) > 1500:
         raise HTTPException(413, "Text too long for one request")
-    ref = voice_path(req.voice) if req.voice else None
-    m = model()
-    exaggeration = float(min(1.5, max(0.25, req.expressiveness)))
-    # Higher expressiveness reads better with a slightly lower CFG weight (per Chatterbox docs).
-    cfg = 0.5 if exaggeration <= 0.6 else 0.35
-    with _gen_lock:
-        kwargs = {"exaggeration": exaggeration, "cfg_weight": cfg}
-        if ref:
-            kwargs["audio_prompt_path"] = str(ref)
-        wav = m.generate(text, **kwargs)
-    audio = wav.squeeze().detach().cpu().numpy().astype("float32")
-    sr = m.sr
-
     speed = float(min(2.5, max(0.5, req.speed or 1.0)))
-    if abs(speed - 1.0) > 0.02:
-        try:
-            import librosa
-            audio = librosa.effects.time_stretch(audio, rate=speed)
-        except Exception as e:  # keep going at normal speed
-            print("time-stretch unavailable:", e, flush=True)
+
+    if req.voice in KOKORO_IDS:
+        audio, sr = kokoro_tts(req.voice, text, speed)
+    else:
+        ref = voice_path(req.voice) if req.voice else None
+        m = model()
+        exaggeration = float(min(1.5, max(0.25, req.expressiveness)))
+        # Higher expressiveness reads better with a slightly lower CFG weight (per Chatterbox docs).
+        cfg = 0.5 if exaggeration <= 0.6 else 0.35
+        with _gen_lock:
+            kwargs = {"exaggeration": exaggeration, "cfg_weight": cfg}
+            if ref:
+                kwargs["audio_prompt_path"] = str(ref)
+            wav = m.generate(text, **kwargs)
+        audio = wav.squeeze().detach().cpu().numpy().astype("float32")
+        sr = m.sr
+        if abs(speed - 1.0) > 0.02:
+            try:
+                import librosa
+                audio = librosa.effects.time_stretch(audio, rate=speed)
+            except Exception as e:  # keep going at normal speed
+                print("time-stretch unavailable:", e, flush=True)
 
     buf = io.BytesIO()
     sf.write(buf, audio, sr, format="WAV", subtype="PCM_16")
@@ -224,5 +279,15 @@ def fetch(url: str = Query(...)):
 if __name__ == "__main__":
     print(f"Vani voice server on http://localhost:{PORT}  (voices in {VOICES})", flush=True)
     if os.environ.get("VANI_PRELOAD", "1") == "1":
-        threading.Thread(target=model, daemon=True).start()
+        def preload():
+            try:
+                kokoro_pipeline("a")  # fast voices first, so reading can start right away
+            except Exception as e:
+                print("Kokoro failed to load:", e, flush=True)
+            try:
+                if list_voices():
+                    model()
+            except Exception as e:
+                print("Chatterbox failed to load:", e, flush=True)
+        threading.Thread(target=preload, daemon=True).start()
     uvicorn.run(app, host=HOST, port=PORT, log_level="warning")

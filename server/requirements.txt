@@ -1,4 +1,5 @@
 chatterbox-tts
+kokoro>=0.9.4
 fastapi
 uvicorn[standard]
 python-multipart
